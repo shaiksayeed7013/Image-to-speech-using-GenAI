@@ -105,7 +105,7 @@ def chat_about_image(user_query: str, image_description: str) -> str:
 
     The user asks: {user_query}
 
-    Provide a short and concise response (max 2 sentences).
+     Provide a relevant and accurate response.
     """
     response = chat_model.generate_content(prompt)
     return response.text if response and response.text else "I couldn't generate a response."

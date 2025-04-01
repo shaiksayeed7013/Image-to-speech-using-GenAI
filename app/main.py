@@ -1,13 +1,10 @@
-# main.py - Complete Updated Version
+# main.py - Final Working Version
 import os
 import time
-import subprocess
-import sys
 import streamlit as st
 from dotenv import load_dotenv
 import google.generativeai as genai
 from gtts import gTTS
-import cv2
 from PIL import Image
 import speech_recognition as sr
 from st_audiorec import st_audiorec
@@ -37,31 +34,6 @@ css_code = """
     }
     </style>
 """
-
-# Ensure FFmpeg is installed
-def ensure_ffmpeg_installed():
-    try:
-        subprocess.run(['ffmpeg', '-version'], 
-                      check=True, 
-                      stdout=subprocess.PIPE, 
-                      stderr=subprocess.PIPE)
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        st.warning("FFmpeg not found. Trying to install...")
-        try:
-            if sys.platform == 'linux':
-                subprocess.run(['apt-get', 'update'], check=True)
-                subprocess.run(['apt-get', 'install', '-y', 'ffmpeg'], check=True)
-                return True
-            elif sys.platform == 'darwin':
-                subprocess.run(['brew', 'install', 'ffmpeg'], check=True)
-                return True
-            else:
-                st.error("Automatic FFmpeg installation not supported on this platform")
-                return False
-        except subprocess.CalledProcessError as e:
-            st.error(f"Failed to install FFmpeg: {e}")
-            return False
 
 # Progress bar function
 def progress_bar(amount_of_time: int) -> None:
@@ -99,22 +71,23 @@ def capture_image_via_streamlit() -> str:
         return img_path
     return None
 
-# Convert audio to WAV format with FFmpeg
-def convert_to_wav(input_audio_path: str, output_audio_path: str) -> str:
+# Convert audio to WAV format
+def convert_to_wav(input_audio_path: str) -> str:
     try:
-        AudioSegment.converter = "ffmpeg"
+        # Use pydub with the default ffmpeg
         audio = AudioSegment.from_file(input_audio_path)
         audio = audio.set_channels(1).set_frame_rate(16000)
-        audio.export(output_audio_path, format="wav")
-        return output_audio_path
+        wav_path = "converted_audio.wav"
+        audio.export(wav_path, format="wav")
+        return wav_path
     except Exception as e:
-        st.error(f"Audio conversion failed: {str(e)}")
+        st.error(f"Audio conversion error: {str(e)}")
         return None
 
 # Convert speech to text
 def speech_to_text(audio_path: str) -> str:
     recognizer = sr.Recognizer()
-    wav_path = convert_to_wav(audio_path, "converted_query.wav")
+    wav_path = convert_to_wav(audio_path)
     
     if not wav_path:
         return "Audio conversion failed"
@@ -146,11 +119,6 @@ def chat_about_image(user_query: str, image_description: str) -> str:
 def main() -> None:
     st.set_page_config(page_title="Enhanced Image-to-Text Converter", page_icon="🖼️")
     st.markdown(css_code, unsafe_allow_html=True)
-
-    # Check for FFmpeg
-    if not ensure_ffmpeg_installed():
-        st.error("FFmpeg is required for audio processing. Deployment may need configuration.")
-        return
 
     # Initialize session state
     if 'stage' not in st.session_state:

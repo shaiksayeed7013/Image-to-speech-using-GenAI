@@ -1,10 +1,7 @@
 streamlit
-opencv-python
+opencv-python-headless  # Use headless version for cloud
 google-generativeai
 python-dotenv
 gtts
 pydub
 speechrecognition
-Pillow
-google-api-python-client
-google-auth

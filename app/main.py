@@ -1,10 +1,11 @@
+# main.py
 import os
 import time
 import streamlit as st
 from dotenv import load_dotenv
 import google.generativeai as genai
 from gtts import gTTS
-import cv2
+import cv2  # Still used for potential image processing
 from PIL import Image
 import speech_recognition as sr
 from st_audiorec import st_audiorec
@@ -61,23 +62,15 @@ def generate_speech(text: str, filename: str) -> str:
     tts.save(audio_file)
     return audio_file
 
-# Capture image from camera
-def open_camera_and_capture_image() -> str:
-    st.info("Opening the camera... Press 'q' to capture.")
-    cam = cv2.VideoCapture(0)
-    while True:
-        ret, frame = cam.read()
-        if not ret:
-            st.error("Failed to grab frame")
-            break
-        cv2.imshow("Press 'q' to capture", frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            img_path = "captured_image.jpg"
-            cv2.imwrite(img_path, frame)
-            break
-    cam.release()
-    cv2.destroyAllWindows()
-    return img_path
+# Modified image capture using Streamlit's native camera input
+def capture_image_via_streamlit() -> str:
+    img_file = st.camera_input("Take a picture")
+    if img_file:
+        img_path = "captured_image.jpg"
+        with open(img_path, "wb") as f:
+            f.write(img_file.getbuffer())
+        return img_path
+    return None
 
 # Convert audio to WAV format
 def convert_to_wav(input_audio_path: str, output_audio_path: str) -> str:
@@ -89,7 +82,7 @@ def convert_to_wav(input_audio_path: str, output_audio_path: str) -> str:
 # Convert speech to text
 def speech_to_text(audio_path: str) -> str:
     recognizer = sr.Recognizer()
-    wav_path = convert_to_wav(audio_path, "converted_query.wav")  # Convert to WAV before processing
+    wav_path = convert_to_wav(audio_path, "converted_query.wav")
 
     with sr.AudioFile(wav_path) as source:
         audio_data = recognizer.record(source)
@@ -102,7 +95,7 @@ def speech_to_text(audio_path: str) -> str:
 
 # Generate chat response using Gemini 1.5 Flash
 def chat_about_image(user_query: str, image_description: str) -> str:
-    chat_model = genai.GenerativeModel('gemini-1.5-flash-002')  # Faster model
+    chat_model = genai.GenerativeModel('gemini-1.5-flash-002')
     prompt = f"""
     The user has captured an image and received the following description:
     {image_description}
@@ -137,9 +130,9 @@ def main() -> None:
 
     # Stage 1: Capture Image
     if st.session_state.stage == 'capture':
-        if st.button("Capture Image"):
-            image_path = open_camera_and_capture_image()
-            st.session_state.image_path = image_path
+        captured_image = capture_image_via_streamlit()
+        if captured_image:
+            st.session_state.image_path = captured_image
             st.session_state.stage = 'describe'
             st.rerun()
 

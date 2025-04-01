@@ -196,7 +196,7 @@ def main() -> None:
         st.subheader("Step 2: Generating Description...")
         progress_bar(100)
         
-        description = generate_detailed_description(st.session_state.image_path)
+        description = generate_short_description(st.session_state.image_path)
         st.session_state.description = description
         st.session_state.stage = 'chat'
         st.rerun()

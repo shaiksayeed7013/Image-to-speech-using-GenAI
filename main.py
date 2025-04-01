@@ -1,0 +1,199 @@
+import os
+import time
+import streamlit as st
+from dotenv import load_dotenv
+import google.generativeai as genai
+from gtts import gTTS
+import cv2
+from PIL import Image
+import speech_recognition as sr
+from st_audiorec import st_audiorec
+from pydub import AudioSegment
+import warnings
+from google.api_core.client_options import ClientOptions
+
+warnings.filterwarnings("ignore")
+
+# Load environment variables
+load_dotenv()
+
+# Configure Gemini API with timeout fixes
+genai.configure(
+    api_key=os.getenv("GOOGLE_API_KEY"),
+    client_options=ClientOptions(api_endpoint="generativelanguage.googleapis.com")
+)
+
+# Custom CSS
+css_code = """
+    <style>
+    section[data-testid="stSidebar"] > div > div:nth-child(2) {
+        padding-top: 0.75rem !important;
+    }
+    section.main > div {
+        padding-top: 64px;
+    }
+    </style>
+"""
+
+# Progress bar function
+def progress_bar(amount_of_time: int) -> None:
+    progress_text = "Please wait, Generative models hard at work"
+    my_bar = st.progress(0, text=progress_text)
+    for percent_complete in range(amount_of_time):
+        time.sleep(0.04)
+        my_bar.progress(percent_complete + 1, text=progress_text)
+    time.sleep(1)
+    my_bar.empty()
+
+# Generate image description using Gemini 1.5 Pro
+def generate_detailed_description(image_path: str) -> str:
+    model = genai.GenerativeModel('gemini-1.5-pro-latest')
+    with open(image_path, 'rb') as img_file:
+        image_data = {'mime_type': 'image/jpeg', 'data': img_file.read()}
+    
+    response = model.generate_content(["Describe this image in detail.", image_data])
+    return response.text if response and response.text else "No description generated."
+
+# Generate speech from text
+def generate_speech(text: str, filename: str) -> str:
+    tts = gTTS(text=text, lang='en')
+    audio_file = f"{filename}.mp3"
+    tts.save(audio_file)
+    return audio_file
+
+# Capture image from camera
+def open_camera_and_capture_image() -> str:
+    st.info("Opening the camera... Press 'q' to capture.")
+    cam = cv2.VideoCapture(0)
+    while True:
+        ret, frame = cam.read()
+        if not ret:
+            st.error("Failed to grab frame")
+            break
+        cv2.imshow("Press 'q' to capture", frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            img_path = "captured_image.jpg"
+            cv2.imwrite(img_path, frame)
+            break
+    cam.release()
+    cv2.destroyAllWindows()
+    return img_path
+
+# Convert audio to WAV format
+def convert_to_wav(input_audio_path: str, output_audio_path: str) -> str:
+    audio = AudioSegment.from_file(input_audio_path)
+    audio = audio.set_channels(1).set_frame_rate(16000)  # Mono and 16kHz sample rate
+    audio.export(output_audio_path, format="wav")
+    return output_audio_path
+
+# Convert speech to text
+def speech_to_text(audio_path: str) -> str:
+    recognizer = sr.Recognizer()
+    wav_path = convert_to_wav(audio_path, "converted_query.wav")  # Convert to WAV before processing
+
+    with sr.AudioFile(wav_path) as source:
+        audio_data = recognizer.record(source)
+        try:
+            return recognizer.recognize_google(audio_data)
+        except sr.UnknownValueError:
+            return "Sorry, I couldn't understand the audio."
+        except sr.RequestError:
+            return "Speech recognition service is unavailable."
+
+# Generate chat response using Gemini 1.5 Flash
+def chat_about_image(user_query: str, image_description: str) -> str:
+    chat_model = genai.GenerativeModel('gemini-1.5-flash-002')  # Faster model
+    prompt = f"""
+    The user has captured an image and received the following description:
+    {image_description}
+
+    The user asks: {user_query}
+
+    Provide a relevant and accurate response.
+    """
+    response = chat_model.generate_content(prompt)
+    return response.text if response and response.text else "I couldn't generate a response."
+
+# Main app function
+def main() -> None:
+    st.set_page_config(page_title="Enhanced Image-to-Text Converter", page_icon="🖼️")
+    st.markdown(css_code, unsafe_allow_html=True)
+
+    # Initialize session state
+    if 'stage' not in st.session_state:
+        st.session_state.stage = 'capture'
+    if 'history' not in st.session_state:
+        st.session_state.history = []
+
+    # Sidebar content
+    with st.sidebar:
+        st.write("---")
+        st.write("AI App created by @Shaik Sayeed")
+        if 'image_path' in st.session_state:
+            st.image(st.session_state.image_path, caption="Captured Image", use_column_width=True)
+
+    st.header("Enhanced Real-Time Image-to-Text Converter")
+    st.write("Capture an image, listen to a detailed description, and chat about it!")
+
+    # Stage 1: Capture Image
+    if st.session_state.stage == 'capture':
+        if st.button("Capture Image"):
+            image_path = open_camera_and_capture_image()
+            st.session_state.image_path = image_path
+            st.session_state.stage = 'describe'
+            st.rerun()
+
+    # Stage 2: Generate Description
+    elif st.session_state.stage == 'describe':
+        st.image(st.session_state.image_path, caption="Captured Image", use_column_width=True)
+        progress_bar(100)
+        description = generate_detailed_description(st.session_state.image_path)
+        st.session_state.description = description
+        description_audio = generate_speech(description, "description")
+        st.audio(description_audio)
+        with st.expander("Generated Image Description"):
+            st.write(description)
+        st.session_state.history = [f"Assistant: {description}"]
+        if st.button("Proceed to Chat"):
+            st.session_state.stage = 'chat'
+            st.rerun()
+
+    # Stage 3: Chat with Model
+    elif st.session_state.stage == 'chat':
+        st.image(st.session_state.image_path, caption="Captured Image", use_column_width=True)
+        st.write("Ask questions about the image using your voice!")
+
+        # Display conversation history
+        with st.expander("Conversation History"):
+            for message in st.session_state.history:
+                st.write(message)
+
+        # Audio input for questions
+        audio = st_audiorec()
+        if audio:
+            with open("query.mp3", "wb") as f:
+                f.write(audio)
+
+            user_query = speech_to_text("query.mp3")
+            st.write(f"You asked: {user_query}")
+
+            # Generate response using Gemini
+            answer = chat_about_image(user_query, st.session_state.description)
+            st.write(f"Assistant: {answer}")
+
+            # Generate and play audio response
+            answer_audio = generate_speech(answer, "answer")
+            st.audio(answer_audio)
+
+            # Update conversation history
+            st.session_state.history.append(f"User: {user_query}")
+            st.session_state.history.append(f"Assistant: {answer}")
+
+        # Option to restart
+        if st.button("Capture a New Image"):
+            st.session_state.stage = 'capture'
+            st.session_state.history = []
+            st.rerun()
+
+if __name__ == "__main__":
+    main()

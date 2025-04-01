@@ -60,19 +60,22 @@ def progress_bar(amount_of_time: int) -> None:
     time.sleep(1)
     my_bar.empty()
 
-def generate_detailed_description(image_path: str) -> str:
+def generate_short_description(image_path: str) -> str:
     model = genai.GenerativeModel('gemini-1.5-pro-latest')
     with open(image_path, 'rb') as img_file:
         image_data = {'mime_type': 'image/jpeg', 'data': img_file.read()}
     
     response = model.generate_content([
-        "Describe this image in comprehensive detail, including:",
-        "1. Main objects and their attributes (colors, shapes, positions)",
-        "2. Background elements",
-        "3. Any text or recognizable logos",
-        "4. Overall style and atmosphere",
+        "Provide a brief description of this image in 3 to 4 lines.",
         image_data
     ])
+    
+    # Limit the description to a maximum of 4 lines
+    if response and response.text:
+        description_lines = response.text.splitlines()
+        limited_description = "\n".join(description_lines[:4])  # Get the first 4 lines
+        return limited_description
+    
     return response.text if response and response.text else "No description generated."
 
 def generate_speech(text: str, filename: str) -> str:

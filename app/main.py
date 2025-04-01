@@ -146,7 +146,7 @@ def chat_about_image(user_query: str, image_description: str) -> str:
 
 def main() -> None:
     st.set_page_config(
-        page_title="Image Insight Assistant",
+        page_title="Virtual Assistant",
         page_icon="🖼️",
         layout="centered"
     )
@@ -169,10 +169,10 @@ def main() -> None:
         if 'image_path' in st.session_state:
             st.image(st.session_state.image_path, caption="Your Image", use_container_width=True)
         st.write("---")
-        st.write("Created by [Your Name]")
+        st.write("Created by [@Shaik Sayeed]")
 
     # Main content
-    st.title("Image Insight Assistant")
+    st.title("Virtual  Assistant For Blind")
     
     # Always show description if available
     if st.session_state.description:

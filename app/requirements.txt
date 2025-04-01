@@ -6,3 +6,4 @@ gtts
 pydub
 speechrecognition
 streamlit-audiorec
+ffmpeg-python

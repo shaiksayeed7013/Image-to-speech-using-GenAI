@@ -1,4 +1,4 @@
-# main.py - Complete Improved Version
+# main.py - Optimized Version
 import os
 import time
 import io
@@ -74,39 +74,40 @@ def capture_image_via_streamlit() -> str:
     return None
 
 def process_audio(audio_bytes: bytes) -> bytes:
-    """Enhance audio quality for better recognition"""
+    """Enhanced audio processing without external dependencies"""
     try:
         # Convert bytes to numpy array
         with wave.open(io.BytesIO(audio_bytes)) as wav_file:
             frames = wav_file.readframes(wav_file.getnframes())
             audio_array = np.frombuffer(frames, dtype=np.int16)
         
-        # Normalize volume and reduce background noise
+        # Normalize volume
         max_val = np.max(np.abs(audio_array))
         if max_val > 0:
             audio_array = (audio_array / max_val * 32767).astype(np.int16)
-            # Simple noise reduction (threshold filter)
-            audio_array[np.abs(audio_array) < 3000] = 0
+        
+        # Simple noise gate
+        threshold = 0.1 * 32767
+        audio_array[np.abs(audio_array) < threshold] = 0
         
         # Convert back to bytes
         with io.BytesIO() as output:
             with wave.open(output, 'wb') as wav_out:
                 wav_out.setnchannels(1)
                 wav_out.setsampwidth(2)
-                wav_out.setframerate(16000)  # Standard speech recognition rate
+                wav_out.setframerate(16000)
                 wav_out.writeframes(audio_array.tobytes())
             return output.getvalue()
     except Exception as e:
-        st.warning(f"Audio enhancement warning: {e}")
-        return audio_bytes  # Return original if processing fails
+        st.warning(f"Audio processing note: {e}")
+        return audio_bytes
 
 def speech_to_text(audio_bytes: bytes) -> str:
     recognizer = sr.Recognizer()
-    recognizer.energy_threshold = 4000  # Better for web recordings
+    recognizer.energy_threshold = 3000
     recognizer.dynamic_energy_threshold = True
     
     try:
-        # Process audio first
         processed_audio = process_audio(audio_bytes)
         
         with io.BytesIO(processed_audio) as audio_file:
@@ -117,18 +118,15 @@ def speech_to_text(audio_bytes: bytes) -> str:
                     sample_width=wav_file.getsampwidth()
                 )
                 
-                # Try Google Web Speech API first
+                # Only use Google Web Speech API (removed Whisper dependency)
                 try:
                     text = recognizer.recognize_google(audio_data, language="en-US")
                     if not text.strip():
                         raise ValueError("Empty transcription")
                     return text
-                except (sr.UnknownValueError, ValueError):
-                    # Fallback to whisper if available
-                    try:
-                        return recognizer.recognize_whisper(audio_data, language="english", model="base")
-                    except:
-                        return None
+                except (sr.UnknownValueError, ValueError) as e:
+                    st.warning("Couldn't understand audio. Please try speaking more clearly.")
+                    return None
     
     except Exception as e:
         st.error(f"Audio processing error: {str(e)}")
@@ -137,13 +135,13 @@ def speech_to_text(audio_bytes: bytes) -> str:
 def chat_about_image(user_query: str, image_description: str) -> str:
     chat_model = genai.GenerativeModel('gemini-1.5-flash')
     prompt = f"""
-    The user has captured an image with the following description:
+    The user has captured an image with this description:
     {image_description}
 
     The user asked: {user_query}
 
-    Provide a helpful and accurate response focusing on the image content.
-    If the question seems unrelated to the image, politely clarify.
+    Provide a helpful response focusing on the image content.
+    If the question seems unrelated, politely clarify.
     """
     response = chat_model.generate_content(prompt)
     return response.text if response and response.text else "I couldn't generate a response."
@@ -221,6 +219,7 @@ def main() -> None:
         
         # Audio input
         st.write("**Ask your question:**")
+        st.info("Speak clearly and hold the microphone close")
         audio_bytes = st_audiorec()
         
         if audio_bytes:
@@ -245,7 +244,7 @@ def main() -> None:
                         st.warning("I didn't catch that. Please try speaking again clearly.")
                     else:
                         st.error("Audio capture failed. Please type your question instead.")
-                        manual_query = st.text_input("Or type your question here:")
+                        manual_query = st.text_input("Type your question here:")
                         if manual_query:
                             answer = chat_about_image(manual_query, st.session_state.description)
                             st.write(f"**Assistant:** {answer}")

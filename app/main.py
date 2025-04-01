@@ -1,6 +1,8 @@
 # main.py - Final Working Version
 import os
 import time
+import io
+import wave
 import streamlit as st
 from dotenv import load_dotenv
 import google.generativeai as genai
@@ -8,7 +10,6 @@ from gtts import gTTS
 from PIL import Image
 import speech_recognition as sr
 from st_audiorec import st_audiorec
-from pydub import AudioSegment
 import warnings
 from google.api_core.client_options import ClientOptions
 
@@ -71,35 +72,29 @@ def capture_image_via_streamlit() -> str:
         return img_path
     return None
 
-# Convert audio to WAV format
-def convert_to_wav(input_audio_path: str) -> str:
-    try:
-        # Use pydub with the default ffmpeg
-        audio = AudioSegment.from_file(input_audio_path)
-        audio = audio.set_channels(1).set_frame_rate(16000)
-        wav_path = "converted_audio.wav"
-        audio.export(wav_path, format="wav")
-        return wav_path
-    except Exception as e:
-        st.error(f"Audio conversion error: {str(e)}")
-        return None
-
-# Convert speech to text
-def speech_to_text(audio_path: str) -> str:
+# Convert speech to text (directly from recorded audio)
+def speech_to_text(audio_bytes: bytes) -> str:
     recognizer = sr.Recognizer()
-    wav_path = convert_to_wav(audio_path)
     
-    if not wav_path:
-        return "Audio conversion failed"
-
-    try:
-        with sr.AudioFile(wav_path) as source:
-            audio_data = recognizer.record(source)
-            return recognizer.recognize_google(audio_data)
-    except sr.UnknownValueError:
-        return "Sorry, I couldn't understand the audio."
-    except sr.RequestError:
-        return "Speech recognition service is unavailable."
+    # Convert bytes to audio file-like object
+    with io.BytesIO(audio_bytes) as audio_file:
+        with wave.open(audio_file, 'rb') as wav_file:
+            # Read the entire audio file
+            audio_data = wav_file.readframes(wav_file.getnframes())
+            
+            # Convert to AudioData for recognition
+            audio = sr.AudioData(
+                audio_data,
+                sample_rate=wav_file.getframerate(),
+                sample_width=wav_file.getsampwidth()
+            )
+            
+            try:
+                return recognizer.recognize_google(audio)
+            except sr.UnknownValueError:
+                return "Sorry, I couldn't understand the audio."
+            except sr.RequestError:
+                return "Speech recognition service is unavailable."
 
 # Generate chat response
 def chat_about_image(user_query: str, image_description: str) -> str:
@@ -110,7 +105,7 @@ def chat_about_image(user_query: str, image_description: str) -> str:
 
     The user asks: {user_query}
 
-    Provide a relevant and accurate response.
+    Provide a short and concise response (max 2 sentences).
     """
     response = chat_model.generate_content(prompt)
     return response.text if response and response.text else "I couldn't generate a response."
@@ -170,12 +165,9 @@ def main() -> None:
                 st.write(message)
 
         # Audio input for questions
-        audio = st_audiorec()
-        if audio:
-            with open("query.mp3", "wb") as f:
-                f.write(audio)
-
-            user_query = speech_to_text("query.mp3")
+        audio_bytes = st_audiorec()
+        if audio_bytes:
+            user_query = speech_to_text(audio_bytes)
             if user_query:
                 st.write(f"You asked: {user_query}")
 

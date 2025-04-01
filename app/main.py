@@ -1,9 +1,8 @@
-# main.py - Optimized Version
+# main.py - Cloud-Optimized Version
 import os
 import time
 import io
-import wave
-import numpy as np
+import base64
 import streamlit as st
 from dotenv import load_dotenv
 import google.generativeai as genai
@@ -37,6 +36,12 @@ css_code = """
     .stAudioRecorder {
         margin-bottom: 20px;
     }
+    .recording-instructions {
+        font-size: 0.9em;
+        color: #666;
+        margin-top: -15px;
+        margin-bottom: 15px;
+    }
     </style>
 """
 
@@ -64,7 +69,7 @@ def generate_speech(text: str, filename: str) -> str:
     return audio_file
 
 def capture_image_via_streamlit() -> str:
-    st.info("Please position your object in the frame and click the button below")
+    st.info("Please position your object in the frame")
     img_file = st.camera_input("Take a clear picture of your object")
     if img_file:
         img_path = "captured_image.jpg"
@@ -73,31 +78,15 @@ def capture_image_via_streamlit() -> str:
         return img_path
     return None
 
-def process_audio(audio_bytes: bytes) -> bytes:
-    """Enhanced audio processing without external dependencies"""
+def process_audio_data(audio_bytes: bytes) -> bytes:
+    """Convert audio to proper format for recognition"""
     try:
-        # Convert bytes to numpy array
-        with wave.open(io.BytesIO(audio_bytes)) as wav_file:
-            frames = wav_file.readframes(wav_file.getnframes())
-            audio_array = np.frombuffer(frames, dtype=np.int16)
+        # Convert the recorded bytes to base64
+        audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
         
-        # Normalize volume
-        max_val = np.max(np.abs(audio_array))
-        if max_val > 0:
-            audio_array = (audio_array / max_val * 32767).astype(np.int16)
+        # Create a proper WAV header (st_audiorec records in WAV format)
+        return audio_bytes  # Already in correct format
         
-        # Simple noise gate
-        threshold = 0.1 * 32767
-        audio_array[np.abs(audio_array) < threshold] = 0
-        
-        # Convert back to bytes
-        with io.BytesIO() as output:
-            with wave.open(output, 'wb') as wav_out:
-                wav_out.setnchannels(1)
-                wav_out.setsampwidth(2)
-                wav_out.setframerate(16000)
-                wav_out.writeframes(audio_array.tobytes())
-            return output.getvalue()
     except Exception as e:
         st.warning(f"Audio processing note: {e}")
         return audio_bytes
@@ -108,19 +97,19 @@ def speech_to_text(audio_bytes: bytes) -> str:
     recognizer.dynamic_energy_threshold = True
     
     try:
-        processed_audio = process_audio(audio_bytes)
+        # Process audio data
+        processed_audio = process_audio_data(audio_bytes)
         
+        # Create an in-memory file-like object
         with io.BytesIO(processed_audio) as audio_file:
-            with wave.open(audio_file, 'rb') as wav_file:
-                audio_data = sr.AudioData(
-                    wav_file.readframes(wav_file.getnframes()),
-                    sample_rate=wav_file.getframerate(),
-                    sample_width=wav_file.getsampwidth()
-                )
+            # Use the recognizer
+            audio_data = sr.AudioFile(audio_file)
+            
+            with audio_data as source:
+                audio = recognizer.record(source)
                 
-                # Only use Google Web Speech API (removed Whisper dependency)
                 try:
-                    text = recognizer.recognize_google(audio_data, language="en-US")
+                    text = recognizer.recognize_google(audio, language="en-US")
                     if not text.strip():
                         raise ValueError("Empty transcription")
                     return text
@@ -217,9 +206,10 @@ def main() -> None:
             for msg in st.session_state.history:
                 st.write(msg)
         
-        # Audio input
+        # Audio input with better instructions
         st.write("**Ask your question:**")
-        st.info("Speak clearly and hold the microphone close")
+        st.markdown('<div class="recording-instructions">Hold the microphone close and speak clearly after pressing record</div>', unsafe_allow_html=True)
+        
         audio_bytes = st_audiorec()
         
         if audio_bytes:

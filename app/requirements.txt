@@ -6,4 +6,3 @@ gtts>=2.3.2
 SpeechRecognition>=3.10.0
 streamlit-audiorec>=0.0.3
 numpy>=1.24.0
-whisper-timestamped>=1.8.1

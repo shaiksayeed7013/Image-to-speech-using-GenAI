@@ -1,11 +1,13 @@
-# main.py
+# main.py - Complete Updated Version
 import os
 import time
+import subprocess
+import sys
 import streamlit as st
 from dotenv import load_dotenv
 import google.generativeai as genai
 from gtts import gTTS
-import cv2  # Still used for potential image processing
+import cv2
 from PIL import Image
 import speech_recognition as sr
 from st_audiorec import st_audiorec
@@ -18,7 +20,7 @@ warnings.filterwarnings("ignore")
 # Load environment variables
 load_dotenv()
 
-# Configure Gemini API with timeout fixes
+# Configure Gemini API
 genai.configure(
     api_key=os.getenv("GOOGLE_API_KEY"),
     client_options=ClientOptions(api_endpoint="generativelanguage.googleapis.com")
@@ -36,6 +38,31 @@ css_code = """
     </style>
 """
 
+# Ensure FFmpeg is installed
+def ensure_ffmpeg_installed():
+    try:
+        subprocess.run(['ffmpeg', '-version'], 
+                      check=True, 
+                      stdout=subprocess.PIPE, 
+                      stderr=subprocess.PIPE)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        st.warning("FFmpeg not found. Trying to install...")
+        try:
+            if sys.platform == 'linux':
+                subprocess.run(['apt-get', 'update'], check=True)
+                subprocess.run(['apt-get', 'install', '-y', 'ffmpeg'], check=True)
+                return True
+            elif sys.platform == 'darwin':
+                subprocess.run(['brew', 'install', 'ffmpeg'], check=True)
+                return True
+            else:
+                st.error("Automatic FFmpeg installation not supported on this platform")
+                return False
+        except subprocess.CalledProcessError as e:
+            st.error(f"Failed to install FFmpeg: {e}")
+            return False
+
 # Progress bar function
 def progress_bar(amount_of_time: int) -> None:
     progress_text = "Please wait, Generative models hard at work"
@@ -46,7 +73,7 @@ def progress_bar(amount_of_time: int) -> None:
     time.sleep(1)
     my_bar.empty()
 
-# Generate image description using Gemini 1.5 Pro
+# Generate image description using Gemini
 def generate_detailed_description(image_path: str) -> str:
     model = genai.GenerativeModel('gemini-1.5-pro-latest')
     with open(image_path, 'rb') as img_file:
@@ -62,7 +89,7 @@ def generate_speech(text: str, filename: str) -> str:
     tts.save(audio_file)
     return audio_file
 
-# Modified image capture using Streamlit's native camera input
+# Capture image using Streamlit's native camera
 def capture_image_via_streamlit() -> str:
     img_file = st.camera_input("Take a picture")
     if img_file:
@@ -72,28 +99,36 @@ def capture_image_via_streamlit() -> str:
         return img_path
     return None
 
-# Convert audio to WAV format
+# Convert audio to WAV format with FFmpeg
 def convert_to_wav(input_audio_path: str, output_audio_path: str) -> str:
-    audio = AudioSegment.from_file(input_audio_path)
-    audio = audio.set_channels(1).set_frame_rate(16000)  # Mono and 16kHz sample rate
-    audio.export(output_audio_path, format="wav")
-    return output_audio_path
+    try:
+        AudioSegment.converter = "ffmpeg"
+        audio = AudioSegment.from_file(input_audio_path)
+        audio = audio.set_channels(1).set_frame_rate(16000)
+        audio.export(output_audio_path, format="wav")
+        return output_audio_path
+    except Exception as e:
+        st.error(f"Audio conversion failed: {str(e)}")
+        return None
 
 # Convert speech to text
 def speech_to_text(audio_path: str) -> str:
     recognizer = sr.Recognizer()
     wav_path = convert_to_wav(audio_path, "converted_query.wav")
+    
+    if not wav_path:
+        return "Audio conversion failed"
 
-    with sr.AudioFile(wav_path) as source:
-        audio_data = recognizer.record(source)
-        try:
+    try:
+        with sr.AudioFile(wav_path) as source:
+            audio_data = recognizer.record(source)
             return recognizer.recognize_google(audio_data)
-        except sr.UnknownValueError:
-            return "Sorry, I couldn't understand the audio."
-        except sr.RequestError:
-            return "Speech recognition service is unavailable."
+    except sr.UnknownValueError:
+        return "Sorry, I couldn't understand the audio."
+    except sr.RequestError:
+        return "Speech recognition service is unavailable."
 
-# Generate chat response using Gemini 1.5 Flash
+# Generate chat response
 def chat_about_image(user_query: str, image_description: str) -> str:
     chat_model = genai.GenerativeModel('gemini-1.5-flash-002')
     prompt = f"""
@@ -112,6 +147,11 @@ def main() -> None:
     st.set_page_config(page_title="Enhanced Image-to-Text Converter", page_icon="🖼️")
     st.markdown(css_code, unsafe_allow_html=True)
 
+    # Check for FFmpeg
+    if not ensure_ffmpeg_installed():
+        st.error("FFmpeg is required for audio processing. Deployment may need configuration.")
+        return
+
     # Initialize session state
     if 'stage' not in st.session_state:
         st.session_state.stage = 'capture'
@@ -123,7 +163,7 @@ def main() -> None:
         st.write("---")
         st.write("AI App created by @Shaik Sayeed")
         if 'image_path' in st.session_state:
-            st.image(st.session_state.image_path, caption="Captured Image", use_column_width=True)
+            st.image(st.session_state.image_path, caption="Captured Image", use_container_width=True)
 
     st.header("Enhanced Real-Time Image-to-Text Converter")
     st.write("Capture an image, listen to a detailed description, and chat about it!")
@@ -138,7 +178,7 @@ def main() -> None:
 
     # Stage 2: Generate Description
     elif st.session_state.stage == 'describe':
-        st.image(st.session_state.image_path, caption="Captured Image", use_column_width=True)
+        st.image(st.session_state.image_path, caption="Captured Image", use_container_width=True)
         progress_bar(100)
         description = generate_detailed_description(st.session_state.image_path)
         st.session_state.description = description
@@ -153,7 +193,7 @@ def main() -> None:
 
     # Stage 3: Chat with Model
     elif st.session_state.stage == 'chat':
-        st.image(st.session_state.image_path, caption="Captured Image", use_column_width=True)
+        st.image(st.session_state.image_path, caption="Captured Image", use_container_width=True)
         st.write("Ask questions about the image using your voice!")
 
         # Display conversation history
@@ -168,19 +208,20 @@ def main() -> None:
                 f.write(audio)
 
             user_query = speech_to_text("query.mp3")
-            st.write(f"You asked: {user_query}")
+            if user_query:
+                st.write(f"You asked: {user_query}")
 
-            # Generate response using Gemini
-            answer = chat_about_image(user_query, st.session_state.description)
-            st.write(f"Assistant: {answer}")
+                # Generate response
+                answer = chat_about_image(user_query, st.session_state.description)
+                st.write(f"Assistant: {answer}")
 
-            # Generate and play audio response
-            answer_audio = generate_speech(answer, "answer")
-            st.audio(answer_audio)
+                # Generate and play audio response
+                answer_audio = generate_speech(answer, "answer")
+                st.audio(answer_audio)
 
-            # Update conversation history
-            st.session_state.history.append(f"User: {user_query}")
-            st.session_state.history.append(f"Assistant: {answer}")
+                # Update conversation history
+                st.session_state.history.append(f"User: {user_query}")
+                st.session_state.history.append(f"Assistant: {answer}")
 
         # Option to restart
         if st.button("Capture a New Image"):

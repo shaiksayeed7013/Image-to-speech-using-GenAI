@@ -1,0 +1,8 @@
+streamlit
+opencv-python
+google-generativeai
+python-dotenv
+gtts
+pydub
+speechrecognition
+st-audiorec

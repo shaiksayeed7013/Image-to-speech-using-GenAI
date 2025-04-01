@@ -3,7 +3,5 @@ opencv-python-headless
 google-generativeai
 python-dotenv
 gtts
-pydub
-speechrecognition
+SpeechRecognition
 streamlit-audiorec
-ffmpeg-python
